@@ -33,6 +33,8 @@ function PatientDetail({
     onDischarge,
     onParseClerking,
     onOpenBloodsModal,
+    onSendToWard,
+    sendingToWard,
   }) {
 
   const [showNewsChart, setShowNewsChart] = useState(false);
@@ -177,6 +179,17 @@ function PatientDetail({
           onSetScale={onSetNews2Scale}
         />
       )}
+
+      <button
+        className="primary-btn full-width"
+        onClick={onSendToWard}
+        disabled={sendingToWard}
+        title="Publish this patient and their full ED record to the shared Patient Data Centre"
+      >
+        {sendingToWard
+          ? "Sending to ward…"
+          : "🏥 Admit to ward (send to Patient Data Centre)"}
+      </button>
 
 <button
         className="primary-btn full-width"

@@ -12,6 +12,7 @@ import PasswordConfirmModal from "./components/PasswordConfirmModal";
 import BloodsModal from "./components/BloodsModal";
 import { extractClerking, generateDischargeSummary } from "./lib/llm";
 import { loadSession, saveSession, clearSession } from "./lib/auth";
+import { sendPatientToWard } from "./lib/wardDb";
 
 const referralOptions = [
   "Medics",
@@ -186,6 +187,7 @@ function App() {
   // { kind: 'note' | 'news', payload: any } or null.
   const [pendingSignedAction, setPendingSignedAction] = useState(null);
   const [showBloodsModal, setShowBloodsModal] = useState(false);
+  const [sendingToWard, setSendingToWard] = useState(false);
   const [dischargeInProgress, setDischargeInProgress] = useState(false);
   const [dischargePreview, setDischargePreview] = useState(null);
   const [dischargingPatientId, setDischargingPatientId] = useState(null);
@@ -276,6 +278,35 @@ function App() {
       return;
     setPatients(buildInitialPatients());
     setSelectedPatientId(null);
+  };
+
+  // ADMIT TO WARD — publish this patient + their full ED record into the
+  // shared Patient Data Centre database. Non-destructive: the patient stays
+  // on the ED board so you can re-test (re-sending upserts, no duplicates).
+  const handleSendToWard = async () => {
+    if (!selectedPatient) return;
+    if (
+      !confirm(
+        `Admit ${selectedPatient.name} to the ward?\n\nThis publishes the patient and their full ED record (notes, NEWS, bloods) into the shared Patient Data Centre.`
+      )
+    )
+      return;
+    setSendingToWard(true);
+    try {
+      await sendPatientToWard(selectedPatient);
+      alert(
+        `${selectedPatient.name} has been admitted to the ward and is now visible in the Patient Data Centre.`
+      );
+    } catch (err) {
+      console.error("Send to ward failed", err);
+      alert(
+        "Could not send to ward: " +
+          (err?.message || String(err)) +
+          "\n\nCheck the browser console for details."
+      );
+    } finally {
+      setSendingToWard(false);
+    }
   };
 
   const handleDischarge = async () => {
@@ -581,6 +612,8 @@ const commitBloodsEntry = (payload) => {
             onDischarge={handleDischarge}
             onParseClerking={handleParseClerking}
             onOpenBloodsModal={() => setShowBloodsModal(true)}
+            onSendToWard={handleSendToWard}
+            sendingToWard={sendingToWard}
           />
         )}
       </div>
