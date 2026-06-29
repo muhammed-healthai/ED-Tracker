@@ -17,6 +17,44 @@ const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_8_crUzoMYpkxiFk-gF0ArQ_QyQe7v-l
 
 export const wardDb = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
+// ---- authentication -----------------------------------------------------
+// Before writing to the shared ward database, ED Tracker signs in as a
+// "ward system" account so the request runs as an AUTHENTICATED user. This
+// is what keeps the bridge working once Row Level Security is switched on
+// (anonymous writes get rejected; authenticated ones are allowed).
+//
+// Credentials live in .env.local (gitignored) — NEVER hardcode them here.
+//   VITE_WARD_EMAIL=clinician@ward.local
+//   VITE_WARD_PASSWORD=your-password
+// Vite only exposes variables that start with VITE_, and only reads them at
+// startup, so restart `npm run dev` after editing .env.local.
+//
+// Production note: Vite inlines these into the browser bundle, so on a
+// deployed site the password is visible in the shipped JS. That's fine for
+// a synthetic-data demo, but a real system would move this privileged write
+// behind a server (Supabase Edge Function / API route) so the credential
+// never reaches the browser.
+let _wardAuthed = false;
+async function ensureWardAuth() {
+  if (_wardAuthed) return;
+  const { data } = await wardDb.auth.getSession();
+  if (data && data.session) {
+    _wardAuthed = true;
+    return;
+  }
+  const email = import.meta.env.VITE_WARD_EMAIL;
+  const password = import.meta.env.VITE_WARD_PASSWORD;
+  if (!email || !password) {
+    throw new Error(
+      "Ward credentials missing — add VITE_WARD_EMAIL and VITE_WARD_PASSWORD to .env.local, then restart the dev server."
+    );
+  }
+  const { error } = await wardDb.auth.signInWithPassword({ email, password });
+  if (error) throw new Error("Ward sign-in failed: " + error.message);
+  _wardAuthed = true;
+  console.log("Ward DB authenticated as", email);
+}
+
 // ---- small date/time helpers -------------------------------------------
 // The ward schema stores `date` as YYYY-MM-DD and `time` as HH:MM (both text).
 
@@ -52,6 +90,16 @@ const PANEL_LABELS = {
   bloodGas: "Blood gas",
 };
 
+// Best-effort modality code from free-text imaging request ("CXR" -> CR).
+function detectModality(text) {
+  const t = (text || "").toLowerCase();
+  if (/\bct\b|computed tomograph/.test(t)) return "CT";
+  if (/\bmri?\b|magnetic reson/.test(t)) return "MR";
+  if (/ultrasound|\buss?\b|doppler|echo/.test(t)) return "US";
+  if (/x-?ray|\bcxr\b|\baxr\b|\bkub\b|radiograph|\bxr\b/.test(t)) return "CR";
+  return "XR";
+}
+
 /**
  * Publish one ED Tracker patient into the shared ward database.
  *
@@ -65,6 +113,9 @@ const PANEL_LABELS = {
 export async function sendPatientToWard(patient, ward = "Ward 6 / Bed 9") {
   if (!patient) throw new Error("No patient supplied");
 
+  // Make sure the bridge is signed in before any write (needed once RLS is on).
+  await ensureWardAuth();
+
   // Stable ward id keyed on the hospital number so re-sends update in place.
   const pid = `pt_ed_${patient.patientId || patient.id}`;
   const scale = patient.news2Scale === "scale2" ? 2 : 1;
@@ -75,7 +126,7 @@ export async function sendPatientToWard(patient, ward = "Ward 6 / Bed 9") {
     nhs_number: null, // ED Tracker doesn't capture NHS number
     hospital_id: patient.patientId || null,
     name: patient.name || null,
-    dob: null,
+    dob: patient.dob || null, // YYYY-MM-DD from ED Tracker's date field
     ward: ward,
     consultant: null,
     location: ward, // now on the ward
@@ -134,24 +185,6 @@ export async function sendPatientToWard(patient, ward = "Ward 6 / Bed 9") {
     });
   });
 
-  if (patient.imagingText && patient.imagingText.trim()) {
-    entries.push({
-      id: `ent_edimg_${pid}`,
-      patient_id: pid,
-      type: "note",
-      location: "ED",
-      source: "ED Tracker",
-      date: isoToDate(patient.arrivalAt),
-      time: "",
-      payload: {
-        noteCategory: "Imaging",
-        noteText: `Imaging requested/performed in ED: ${patient.imagingText}`,
-        signName: "",
-        signGrade: "",
-      },
-    });
-  }
-
   // The transfer event itself — this is what makes the ward Journey tab
   // show an ED -> ward handover with a "time in ED" metric.
   entries.push({
@@ -198,7 +231,31 @@ export async function sendPatientToWard(patient, ward = "Ward 6 / Bed 9") {
     });
   });
 
-  // ---- 4. write everything (upsert = safe to re-run) -------------------
+  // ---- 4. imaging (ED imaging is a *request* — no image/report yet) ----
+  const imaging = [];
+  const imgText = (patient.imagingText || "").trim();
+  if (imgText || patient.tasks?.imaging) {
+    imaging.push({
+      id: `img_ed_${pid}`,
+      patient_id: pid,
+      payload: {
+        modality: detectModality(imgText),
+        accession: `ED${patient.patientId || patient.id}`,
+        description: imgText || "Imaging requested",
+        status: "requested", // ordered in ED; image/report not back yet
+        date: isoToDate(patient.arrivalAt),
+        time: "",
+        hasImage: false,
+        conclusion: "",
+        report: "",
+        reportStatus: "pending",
+        reportedBy: "",
+        reportedAt: "",
+      },
+    });
+  }
+
+  // ---- 5. write everything (upsert = safe to re-run) -------------------
   const pRes = await wardDb.from("patients").upsert(patientRow);
   if (pRes.error) throw pRes.error;
 
@@ -210,6 +267,11 @@ export async function sendPatientToWard(patient, ward = "Ward 6 / Bed 9") {
   if (labs.length) {
     const lRes = await wardDb.from("labs").upsert(labs);
     if (lRes.error) throw lRes.error;
+  }
+
+  if (imaging.length) {
+    const iRes = await wardDb.from("imaging").upsert(imaging);
+    if (iRes.error) throw iRes.error;
   }
 
   return pid;

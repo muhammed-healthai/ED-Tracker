@@ -1,11 +1,6 @@
 const triageOptions = ["Red", "Amber", "Green"];
 
-function AddPatientModal({
-  newPatient,
-  setNewPatient,
-  onClose,
-  onSubmit,
-}) {
+function AddPatientModal({ newPatient, setNewPatient, onClose, onSubmit }) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
@@ -13,7 +8,6 @@ function AddPatientModal({
           <h2>Add patient</h2>
           <button onClick={onClose}>Close</button>
         </div>
-
         <div className="add-form">
           <label>
             Name *
@@ -35,6 +29,16 @@ function AddPatientModal({
                 setNewPatient((n) => ({ ...n, patientId: e.target.value }))
               }
               placeholder="e.g. H123456"
+            />
+          </label>
+          <label>
+            Date of birth
+            <input
+              type="date"
+              value={newPatient.dob}
+              onChange={(e) =>
+                setNewPatient((n) => ({ ...n, dob: e.target.value }))
+              }
             />
           </label>
           <label className="full-row">
@@ -129,7 +133,6 @@ function AddPatientModal({
             />
           </label>
         </div>
-
         <button
           className="primary-btn full-width"
           style={{ marginTop: "16px" }}
