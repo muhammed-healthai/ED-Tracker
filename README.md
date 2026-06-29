@@ -1,242 +1,77 @@
-# ED-Tracker — AI-Augmented Emergency Department Patient Tracker
+# ED Tracker
 
-[![Live demo](https://img.shields.io/badge/demo-live-success?logo=vercel&logoColor=white)](https://ed-tracker-seven.vercel.app)
-[![React 19](https://img.shields.io/badge/react-19-61dafb.svg?logo=react&logoColor=white)](https://react.dev)
-[![Vite 7](https://img.shields.io/badge/vite-7-646cff.svg?logo=vite&logoColor=white)](https://vitejs.dev)
-[![Built with Claude](https://img.shields.io/badge/AI-Claude%20Sonnet%204.5-D97757)](https://www.anthropic.com/claude)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+A live emergency-department tracking board with AI-assisted clerking, signed clinical entries, and a real **admit-to-ward handover** into a shared clinical record.
 
-A doctor-built web app for tracking patients in an Emergency Department, with two genuinely useful AI features powered by Claude:
-
-1. **Free-text → structured form** — paste a clerking narrative, Claude extracts presenting complaint, observations, and triage suggestion
-2. **AI-generated discharge summaries** — one click produces a complete, editable discharge summary from everything entered during the patient's stay
-
-**🔗 Live demo:** [ed-tracker-seven.vercel.app](https://ed-tracker-seven.vercel.app)
-
-Built by a resident doctor who got tired of the friction between writing free-text clerkings and filling in identical structured fields, and of writing the same discharge summary patterns by hand at the end of every shift.
-
----
-
-## Try it
-
-The live demo includes 4 demo accounts (different roles). Click "Show demo accounts" on the login page or use:
-
-| Username      | Role   | Password |
-|---------------|--------|----------|
-| `drpatel`     | Doctor | `demo123`  |
-| `drwilliams`  | Doctor | `demo123`  |
-| `nursekhan`   | Nurse  | `demo123`  |
-| `hcasmith`    | HCA    | `demo123`  |
+> ⚠️ **Synthetic data only.** This is a portfolio/demo project, not a medical device, and is not for real patient data.
 
 ---
 
 ## What it does
 
-<p align="center">
-  <img src="assets/screenshots/ed_app_top.png" width="90%" alt="ED-Tracker patient table" />
-</p>
+- **ED board** — patients with triage category (Red/Amber/Green), live time-in-department timers, and department stats.
+- **NEWS2** — structured observation entry with live score, risk banding, and a trend chart (Scale 1 / Scale 2).
+- **Structured bloods** — FBC, U&Es, LFTs, inflammatory markers, other markers, and blood gas, with separate sample/results timestamps.
+- **Signed entries** — notes, NEWS, and bloods are committed via a password re-confirmation step and stamped with the clinician's name and role.
+- **AI assist (Claude)** — auto-fill observations and presenting complaint from a free-text clerking, and generate a discharge summary.
+- **Admit to ward** — publishes the patient and their full ED record into a shared **Patient Data Centre** (the ward record). This simulates an HL7 **ADT^A02** transfer.
 
-The core flow mirrors how UK ED tracker software (EDIS, Symphony, Medway) actually works:
+## Ward integration (shared backend)
 
-- **Patient table** — name, presenting complaint, **live time-in-dept timer**, **clinician-seen timer**, triage badge, NEWS, referral, status
-- **Click a patient** to open a detail panel with contact / GP info, free-text notes, ED tasks (triage, bloods, imaging, referral), structured **bloods entry** (FBC / U&Es / LFTs / inflammatory / blood gas), and an expandable **NEWS chart** with three tabs: entry, reference grid, trend
-- **NEWS2 auto-calculated** using the Royal College of Physicians 2017 spec, with per-patient Scale 1 / Scale 2 toggle for hypercapnic respiratory failure
-- **Every clinical entry is signed and locked** — notes, NEWS observations, and blood results all carry author identity and require password re-verification before submission
-- **Discharge** — generates an AI-powered discharge summary the doctor can edit, copy, or download as a PDF
+ED Tracker and the Patient Data Centre are two separate apps that share **one Supabase (Postgres) project**.
 
-State persists to `localStorage` so the patient list survives refreshes. A **Reset demo** button restores the canonical demo state for portfolio viewers.
+- ED Tracker keeps its own fast local board (`localStorage`). It is not continuously synced.
+- At the moment of transfer, `src/lib/wardDb.js` publishes the patient into the shared `patients`, `entries`, `labs`, and `imaging` tables:
+  - notes → timeline notes
+  - NEWS history → NEWS entries
+  - bloods → lab panels
+  - imaging request → a "requested" imaging study
+  - plus an ED → ward transfer event (which drives the ward's Journey/time-in-ED view)
+- **Realtime** — the ward record updates live (no refresh) when a patient is admitted.
+- **Auth + Row Level Security** — the shared tables have RLS enabled; only an authenticated session can read or write. ED Tracker signs in as a "ward system" account before publishing.
 
----
+## Tech stack
 
-## The "AI" earns its name
+React 19 · Vite · Supabase (Postgres, Auth, Realtime) · Anthropic API (Claude) · jsPDF
 
-This isn't an `if/else` engine dressed up with marketing. Both AI features are real Claude calls, with thoughtful prompt engineering and a trust-preserving UX (the doctor reviews and edits every AI output before it lands in the record).
+## Local development
 
-### Feature 1 — Parse free-text into structured fields
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+2. Create a `.env.local` file in the project root (this file is gitignored — never commit it):
+   ```bash
+   # Ward database sign-in (a Supabase Auth user — create one in the
+   # Supabase dashboard with "Auto Confirm User" ticked)
+   VITE_WARD_EMAIL=clinician@ward.local
+   VITE_WARD_PASSWORD=your-password
+   ```
+   The AI features call the serverless functions in `api/`, which require an Anthropic API key set as an environment variable in your deployment (see the `api/*.js` files for the exact name they expect).
+3. Run the dev server:
+   ```bash
+   npm run dev
+   ```
 
-Paste a narrative clerking. Claude extracts:
-- Presenting complaint (concise, headline-style)
-- All seven observations (RR, SpO₂, O₂ device, temp, SBP, HR, AVPU)
-- A suggested triage band (Red / Amber / Green) per NHS conventions
+The Supabase project URL and **publishable** key are set in `src/lib/wardDb.js`. The publishable key is safe to expose in client code by design; the secret key is never used here.
 
-The result appears in an **editable preview modal** — the doctor reviews and applies, never auto-write. The NEWS form pre-fills so committing the obs takes one click.
+## Security & governance notes
 
-<p align="center">
-  <img src="assets/screenshots/ed_parse_modal.png" width="80%" alt="Claude-extracted clerking data" />
-</p>
+- **Synthetic data only.** RLS on a free-tier Supabase project does not meet NHS information-governance requirements (DSPT / DPIA / Caldicott) for real patient data.
+- The ward-system password is read from a `VITE_` variable, which Vite **inlines into the client bundle** — so on a deployed site it is visible in the shipped JavaScript. This is acceptable for a synthetic demo. In production the privileged write would move behind a server function (e.g. a Supabase Edge Function) so the credential never reaches the browser.
+- Access control is "any authenticated clinician can access the shared ward record," which is the correct model for a shared ward. Finer-grained, role-based policies would be the next step toward production.
 
-### Feature 2 — AI-generated discharge summaries
-
-Click "Discharge with AI summary." Claude reads the entire patient record (notes chronologically, NEWS history with trend, tasks completed, blood results with both timestamps, imaging, referrals) and produces a six-section discharge summary:
-
-- Diagnosis / working differential
-- Investigations performed (with actual blood values quoted)
-- Management in ED
-- Plan / disposition
-- Follow-up arrangements
-- A GP-letter paragraph in third-person prose
-
-Every section is editable. Output options: copy as text, download PDF, or confirm discharge.
-
-<p align="center">
-  <img src="assets/screenshots/ed_discharge_modal.png" width="85%" alt="AI-generated discharge summary modal" />
-</p>
-
-A behavioural detail worth noting: when the patient record contains obviously synthetic data (e.g. all blood values identical), Claude declines to quote the values and notes them as "results pending" instead. That's the clinically-correct calibration — an AI that refuses to confidently quote dummy data.
-
----
-
-## Audit trail and signing
-
-Real EPRs (Cerner Millennium, EPIC) require password re-verification before authoritative actions. ED-Tracker mirrors this:
-
-- **Every clinical entry is signed** — notes, NEWS observations, and blood results all stamp the current user's name, role, and a full ISO timestamp
-- **Every entry is locked** — once submitted, content cannot be edited or deleted
-- **Re-auth required** — submitting a note, saving a NEWS entry, or saving blood results all open a password modal that must be confirmed before the entry commits
-- **Cancel preserves draft** — if the user cancels at the password prompt, their typed work stays in the form
-
-Notes appear in the history with an author pill (e.g. "Dr A. Patel · DOCTOR"). Clicking opens a read-only modal with the full timestamp, author block, and a locked banner. Same pattern for blood results.
-
----
-
-## NEWS2 — official chart + trend
-
-A clinical detail worth highlighting because it's where most "NEWS calculator" projects cut corners:
-
-NEWS2 has two scales for SpO₂ scoring:
-- **Scale 1** (default adult): target SpO₂ ≥96%
-- **Scale 2** (hypercapnic respiratory failure, e.g. severe COPD): target SpO₂ 88-92%
-
-The clinically critical bit: on Scale 2, **breathing supplemental oxygen at SpO₂ ≥93% scores higher than breathing air at the same SpO₂**, because hyperoxygenation in T2RF risks CO₂ retention. The toggle lives on the patient (per-patient clinical decision, not per-observation), and the score recalculates instantly when flipped.
-
-The NEWS chart card has three tabs:
-- **Add entry** — the live-calculated observation form
-- **Reference grid** — the official RCP NEWS2 scoring grid, with the bands triggered by the most recent observation highlighted
-- **Trend** — vital signs over time with traffic-light colouring per parameter
-
-Reference: [RCP NEWS2 (July 2017)](https://www.rcplondon.ac.uk/projects/outputs/national-early-warning-score-news-2)
-
----
-
-## Architecture
+## Project structure
 
 ```
-Browser (React)                     Vercel                          Anthropic
-[free text input]    ──POST──▶   /api/extract-clerking   ──POST──▶  Claude API
-(serverless function)               (sk-ant-... lives here,
-│                              never in the bundle)
-[parsed obs]        ◀──JSON───        │
-reads ANTHROPIC_API_KEY
-from Vercel env vars
+src/
+  App.jsx              Central state and handlers
+  components/          UI (PatientDetail, AddPatientModal, BloodsModal,
+                       NewsChart, NotesHistory, BloodsHistory, ...)
+  lib/
+    auth.js            In-app clinician login / signing identity
+    llm.js             Calls to the AI serverless functions
+    news.js            NEWS2 scoring
+    time.js            Time helpers
+    wardDb.js          The ward bridge (Supabase client + sendPatientToWard)
+api/                   Serverless functions for the Claude calls
 ```
-Two serverless functions handle Claude calls; the React app never sees the API key.
-
-```
-ED-Tracker/
-├── api/
-│   ├── extract-clerking.js          # narrative → structured JSON
-│   └── generate-discharge-summary.js # patient record → discharge document
-├── src/
-│   ├── App.jsx                       # state orchestrator
-│   ├── App.css
-│   ├── lib/
-│   │   ├── auth.js                   # demo users, session helpers
-│   │   ├── llm.js                    # frontend client for /api endpoints
-│   │   ├── news.js                   # NEWS2 calculator (Scale 1 + Scale 2)
-│   │   └── time.js                   # duration formatters + timer helpers
-│   └── components/
-│       ├── LoginPage.jsx
-│       ├── TopBar.jsx
-│       ├── StatsBanner.jsx           # 3-card KPI banner
-│       ├── PatientTable.jsx          # in-department list with live timers
-│       ├── PatientDetail.jsx         # per-patient panel
-│       ├── NewsChart.jsx             # tabbed NEWS card (entry / ref / trend)
-│       ├── AddPatientModal.jsx       # new patient form
-│       ├── BloodsModal.jsx           # 6-panel structured bloods entry
-│       ├── BloodsHistory.jsx         # signed bloods list + detail modal
-│       ├── NotesHistory.jsx
-│       ├── NoteDetailModal.jsx       # read-only signed note view
-│       ├── ParsePreviewModal.jsx     # AI extract review modal
-│       ├── DischargeSummaryModal.jsx # AI discharge review + PDF export
-│       └── PasswordConfirmModal.jsx  # re-auth before signed actions
-└── assets/
-└── screenshots/                  # README images
-```
-
-**Stack:** React 19, Vite 7, plain CSS, jsPDF, `@anthropic-ai/sdk`, Vercel Functions. No backend database, no server-side storage. State is per-browser (`localStorage`) by design — no patient data ever leaves the user's browser except the narrative paste / discharge generation calls, which go to Claude via Vercel.
-
----
-
-## Demo authentication
-
-The login system uses 4 hardcoded demo accounts with cleartext password comparison. **This is intentionally simplified for portfolio purposes.** The architectural shape (login → session → attributed actions → re-auth → logout) is identical to a production system; only the credential check is simplified.
-
-A real deployment would replace `src/lib/auth.js` with:
-- A backend (Vercel KV / Postgres / Supabase) storing bcrypt-hashed passwords
-- Server-issued JWT or session cookies with refresh
-- HTTPS-only secure cookies
-
-The dependency boundary is clean: `auth.js` exports `validateLogin()` and `verifyPassword()` and nothing else uses the demo user list directly. Swapping in a real auth provider would not touch any other file.
-
----
-
-## Run locally
-
-```bash
-git clone https://github.com/M-Omarjee/ED-Tracker.git
-cd ED-Tracker
-
-npm install
-
-# Add your Anthropic API key (get one at console.anthropic.com)
-echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env.local
-
-# Run with full Vercel emulation (serverless functions + frontend)
-vercel dev
-
-# Or just the frontend (AI features will return "fallback")
-npm run dev
-```
-
-For the full AI experience locally you need `vercel dev` so the serverless functions run.
-
----
-
-## Limitations and honest scope
-
-- **Demo data only.** The two demo patients (John Smith, Sarah Ahmed) are entirely synthetic
-- **Demo authentication.** Cleartext passwords compared against a hardcoded user list — see "Demo authentication" section above
-- **No backend / no real persistence.** State persists to `localStorage` only. Each user's browser holds their own data
-- **No imaging or LIMS integration.** Imaging is a free-text label; bloods are entered manually. The bloods schema is designed to map to FHIR Observation / LOINC for a future LIMS integration
-- **NEWS2 only.** No paediatric (PEWS) or maternal (MEOWS) early warning scores
-- **AI output is a draft, not a clinical decision.** Claude is wrong sometimes. Both AI features show the output in editable preview modals so the doctor reviews before applying. The PDF footer says "please verify before clinical use"
-
----
-
-## Roadmap
-
-- [ ] NHS LIMS integration (FHIR Observation pull, replacing manual blood entry)
-- [ ] PEWS / MEOWS support
-- [ ] Trust-branded discharge PDF (logo upload, header colour)
-- [ ] Multi-clinician handover (shift change with notes carry-over)
-- [ ] Real backend auth (Vercel KV + bcrypt + JWT)
-- [ ] Audit log for discharged patients (currently they're removed from view; the dischargedAt timestamp is captured for future use)
-
----
-
-## Author
-
-**Dr Muhammed Omarjee**
-Resident Doctor (MBBS, King's College London 2023)
-Building practical AI tools for NHS frontline workflows.
-
-Sister projects (live):
-- [ECG-Explain](https://github.com/M-Omarjee/ecg-explain) — 12-lead ECG classifier with per-lead Grad-CAM (PTB-XL, AUROC 0.91)
-- [Sepsis-AI](https://github.com/M-Omarjee/sepsis-ai) — NEWS2 vs ML benchmark with decision curve analysis and subgroup audit
-- [AuditAI](https://github.com/M-Omarjee/Audit-AI) — [Live](https://audit-ai-mo.streamlit.app) — AI-powered clinical audit tool with Claude-generated NICE/RCP-grounded recommendations
-
----
-
-## License
-
-[MIT](LICENSE)
