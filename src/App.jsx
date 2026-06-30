@@ -12,7 +12,8 @@ import PasswordConfirmModal from "./components/PasswordConfirmModal";
 import BloodsModal from "./components/BloodsModal";
 import { extractClerking, generateDischargeSummary } from "./lib/llm";
 import { loadSession, saveSession, clearSession } from "./lib/auth";
-import { sendPatientToWard } from "./lib/wardDb";
+import { sendPatientToWard, getWardSession, wardSignIn } from "./lib/wardDb";
+import WardLoginModal from "./components/WardLoginModal";
 
 const referralOptions = [
   "Medics",
@@ -191,6 +192,9 @@ function App() {
   const [pendingSignedAction, setPendingSignedAction] = useState(null);
   const [showBloodsModal, setShowBloodsModal] = useState(false);
   const [sendingToWard, setSendingToWard] = useState(false);
+  const [wardLoginOpen, setWardLoginOpen] = useState(false);
+  const [wardLoginBusy, setWardLoginBusy] = useState(false);
+  const [wardLoginError, setWardLoginError] = useState("");
   const [dischargeInProgress, setDischargeInProgress] = useState(false);
   const [dischargePreview, setDischargePreview] = useState(null);
   const [dischargingPatientId, setDischargingPatientId] = useState(null);
@@ -286,6 +290,8 @@ function App() {
   // ADMIT TO WARD — publish this patient + their full ED record into the
   // shared Patient Data Centre database. Non-destructive: the patient stays
   // on the ED board so you can re-test (re-sending upserts, no duplicates).
+  // Writing requires a signed-in ward session; if there isn't one yet we
+  // prompt for it (once per session) — no credentials are stored in the app.
   const handleSendToWard = async () => {
     if (!selectedPatient) return;
     if (
@@ -294,6 +300,16 @@ function App() {
       )
     )
       return;
+    const session = await getWardSession();
+    if (!session) {
+      setWardLoginError("");
+      setWardLoginOpen(true);
+      return;
+    }
+    await publishToWard();
+  };
+
+  const publishToWard = async () => {
     setSendingToWard(true);
     try {
       await sendPatientToWard(selectedPatient);
@@ -309,6 +325,20 @@ function App() {
       );
     } finally {
       setSendingToWard(false);
+    }
+  };
+
+  const handleWardLogin = async (email, password) => {
+    setWardLoginBusy(true);
+    setWardLoginError("");
+    try {
+      await wardSignIn(email, password);
+      setWardLoginOpen(false);
+      await publishToWard();
+    } catch (e) {
+      setWardLoginError(e?.message || "Sign in failed.");
+    } finally {
+      setWardLoginBusy(false);
     }
   };
 
@@ -674,6 +704,15 @@ const commitBloodsEntry = (payload) => {
         <BloodsModal
           onCancel={() => setShowBloodsModal(false)}
           onSubmit={handleSubmitBloods}
+        />
+      )}
+
+      {wardLoginOpen && (
+        <WardLoginModal
+          onCancel={() => setWardLoginOpen(false)}
+          onSubmit={handleWardLogin}
+          error={wardLoginError}
+          busy={wardLoginBusy}
         />
       )}
     </div>
