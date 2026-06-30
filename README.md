@@ -2,6 +2,8 @@
 
 A live emergency-department tracking board with AI-assisted clerking, signed clinical entries, and a real **admit-to-ward handover** into a shared clinical record.
 
+**Live demo:** https://ed-tracker-seven.vercel.app
+
 > ⚠️ **Synthetic data only.** This is a portfolio/demo project, not a medical device, and is not for real patient data.
 
 ---
