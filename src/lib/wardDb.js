@@ -18,41 +18,22 @@ const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_8_crUzoMYpkxiFk-gF0ArQ_QyQe7v-l
 export const wardDb = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
 // ---- authentication -----------------------------------------------------
-// Before writing to the shared ward database, ED Tracker signs in as a
-// "ward system" account so the request runs as an AUTHENTICATED user. This
-// is what keeps the bridge working once Row Level Security is switched on
-// (anonymous writes get rejected; authenticated ones are allowed).
+// Writing to the shared ward database runs as an AUTHENTICATED user, which
+// RLS requires. The clinician signs in at runtime (a small modal in the app)
+// and Supabase keeps a short-lived session — so NO password is ever stored
+// in this code or baked into the shipped bundle. The browser only ever holds
+// a temporary session token, exactly as a normal logged-in app would.
 //
-// Credentials live in .env.local (gitignored) — NEVER hardcode them here.
-//   VITE_WARD_EMAIL=clinician@ward.local
-//   VITE_WARD_PASSWORD=your-password
-// Vite only exposes variables that start with VITE_, and only reads them at
-// startup, so restart `npm run dev` after editing .env.local.
-//
-// Production note: Vite inlines these into the browser bundle, so on a
-// deployed site the password is visible in the shipped JS. That's fine for
-// a synthetic-data demo, but a real system would move this privileged write
-// behind a server (Supabase Edge Function / API route) so the credential
-// never reaches the browser.
-let _wardAuthed = false;
-async function ensureWardAuth() {
-  if (_wardAuthed) return;
+// getWardSession() lets the app check whether we're already signed in;
+// wardSignIn() establishes a session from credentials typed at runtime.
+export async function getWardSession() {
   const { data } = await wardDb.auth.getSession();
-  if (data && data.session) {
-    _wardAuthed = true;
-    return;
-  }
-  const email = import.meta.env.VITE_WARD_EMAIL;
-  const password = import.meta.env.VITE_WARD_PASSWORD;
-  if (!email || !password) {
-    throw new Error(
-      "Ward credentials missing — add VITE_WARD_EMAIL and VITE_WARD_PASSWORD to .env.local, then restart the dev server."
-    );
-  }
+  return (data && data.session) || null;
+}
+
+export async function wardSignIn(email, password) {
   const { error } = await wardDb.auth.signInWithPassword({ email, password });
-  if (error) throw new Error("Ward sign-in failed: " + error.message);
-  _wardAuthed = true;
-  console.log("Ward DB authenticated as", email);
+  if (error) throw error;
 }
 
 // ---- small date/time helpers -------------------------------------------
@@ -113,8 +94,8 @@ function detectModality(text) {
 export async function sendPatientToWard(patient, ward = "Ward 6 / Bed 9") {
   if (!patient) throw new Error("No patient supplied");
 
-  // Make sure the bridge is signed in before any write (needed once RLS is on).
-  await ensureWardAuth();
+  // The caller (App) guarantees there is a signed-in ward session before
+  // reaching here, so the writes below run as an authenticated user.
 
   // Stable ward id keyed on the hospital number so re-sends update in place.
   const pid = `pt_ed_${patient.patientId || patient.id}`;
