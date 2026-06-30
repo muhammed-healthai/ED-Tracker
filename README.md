@@ -8,6 +8,8 @@ A live emergency-department tracking board with AI-assisted clerking, signed cli
 
 > ⚠️ **Synthetic data only.** This is a portfolio/demo project, not a medical device, and is not for real patient data.
 
+See [DECISIONS.md](DECISIONS.md) for the engineering trade-offs behind this system.
+
 ---
 
 ## What it does
