@@ -44,29 +44,23 @@ React 19 · Vite · Supabase (Postgres, Auth, Realtime) · Anthropic API (Claude
 ## Local development
 
 1. Install dependencies:
-   ```bash
+```bash
    npm install
-   ```
-2. Create a `.env.local` file in the project root (this file is gitignored — never commit it):
-   ```bash
-   # Ward database sign-in (a Supabase Auth user — create one in the
-   # Supabase dashboard with "Auto Confirm User" ticked)
-   VITE_WARD_EMAIL=clinician@ward.local
-   VITE_WARD_PASSWORD=your-password
-   ```
-   The AI features call the serverless functions in `api/`, which require an Anthropic API key set as an environment variable in your deployment (see the `api/*.js` files for the exact name they expect).
-3. Run the dev server:
-   ```bash
+```
+2. Run the dev server:
+```bash
    npm run dev
-   ```
+```
 
-The Supabase project URL and **publishable** key are set in `src/lib/wardDb.js`. The publishable key is safe to expose in client code by design; the secret key is never used here.
+The AI features call the serverless functions in `api/`, which require an Anthropic API key set as an environment variable in your deployment (see the `api/*.js` files for the exact name they expect).
+
+The Supabase project URL and **publishable** key are set in `src/lib/wardDb.js` (the publishable key is safe to expose in client code). Writing to the shared ward database requires a sign-in: the first time you admit a patient, ED Tracker prompts for a ward (Supabase) account. Create one in the Supabase dashboard (Authentication → Users → Add user) with **"Auto Confirm User"** ticked. The session is remembered for the rest of the browser session.
 
 ## Security & governance notes
 
 - **Synthetic data only.** RLS on a free-tier Supabase project does not meet NHS information-governance requirements (DSPT / DPIA / Caldicott) for real patient data.
-- The ward-system password is read from a `VITE_` variable, which Vite **inlines into the client bundle** — so on a deployed site it is visible in the shipped JavaScript. This is acceptable for a synthetic demo. In production the privileged write would move behind a server function (e.g. a Supabase Edge Function) so the credential never reaches the browser.
-- Access control is "any authenticated clinician can access the shared ward record," which is the correct model for a shared ward. Finer-grained, role-based policies would be the next step toward production.
+- **No long-lived credentials in the client.** Writes to the shared ward database run under a short-lived Supabase session — the clinician signs in at runtime (a prompt on first admit), and the write is authorised by Row Level Security as an authenticated user. No password or privileged key is baked into the shipped bundle.
+- Access control is "any authenticated clinician can access the shared ward record" — the correct model for a shared ward. Finer-grained, role-based policies would be the next step toward production.
 
 ## Project structure
 
