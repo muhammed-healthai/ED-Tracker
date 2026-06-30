@@ -288,15 +288,15 @@ function App() {
   };
 
   // ADMIT TO WARD — publish this patient + their full ED record into the
-  // shared Patient Data Centre database. Non-destructive: the patient stays
-  // on the ED board so you can re-test (re-sending upserts, no duplicates).
-  // Writing requires a signed-in ward session; if there isn't one yet we
-  // prompt for it (once per session) — no credentials are stored in the app.
+  // shared Patient Data Centre, then remove them from the ED board (they've
+  // physically left the ED). Writing requires a signed-in ward session; if
+  // there isn't one yet we prompt for it (once per session) — no credentials
+  // are stored in the app.
   const handleSendToWard = async () => {
     if (!selectedPatient) return;
     if (
       !confirm(
-        `Admit ${selectedPatient.name} to the ward?\n\nThis publishes the patient and their full ED record (notes, NEWS, bloods) into the shared Patient Data Centre.`
+        `Admit ${selectedPatient.name} to the ward?\n\nThis publishes the patient and their full ED record (notes, NEWS, bloods) into the shared Patient Data Centre, and removes them from the ED board.`
       )
     )
       return;
@@ -310,11 +310,16 @@ function App() {
   };
 
   const publishToWard = async () => {
+    const patient = selectedPatient;
+    if (!patient) return;
     setSendingToWard(true);
     try {
-      await sendPatientToWard(selectedPatient);
+      await sendPatientToWard(patient);
+      // Patient has left the ED — clear them off the board and close the panel.
+      setPatients((prev) => prev.filter((p) => p.id !== patient.id));
+      setSelectedPatientId(null);
       alert(
-        `${selectedPatient.name} has been admitted to the ward and is now visible in the Patient Data Centre.`
+        `${patient.name} has been admitted to the ward and removed from the ED board. Their record is now in the Patient Data Centre.`
       );
     } catch (err) {
       console.error("Send to ward failed", err);
