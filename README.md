@@ -19,6 +19,10 @@ A live emergency-department tracking board with AI-assisted clerking, signed cli
 - **AI assist (Claude)** — auto-fill observations and presenting complaint from a free-text clerking, and generate a discharge summary.
 - **Admit to ward** — publishes the patient and their full ED record into a shared **Patient Data Centre** (the ward record). This simulates an HL7 **ADT^A02** transfer.
 
+## Architecture
+
+![Architecture: ED Tracker and the Patient Data Centre share one Supabase backend; every request crosses an authenticated, RLS-enforced boundary](docs/architecture.png)
+
 ## Ward integration (shared backend)
 
 ED Tracker and the Patient Data Centre are two separate apps that share **one Supabase (Postgres) project**.
