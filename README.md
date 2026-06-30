@@ -1,5 +1,7 @@
 # ED Tracker
 
+![ED Tracker publishing a patient live into the Patient Data Centre](docs/demo.gif)
+
 A live emergency-department tracking board with AI-assisted clerking, signed clinical entries, and a real **admit-to-ward handover** into a shared clinical record.
 
 **Live demo:** https://ed-tracker-seven.vercel.app
